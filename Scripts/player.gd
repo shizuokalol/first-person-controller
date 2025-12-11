@@ -1,12 +1,22 @@
 extends CharacterBody3D
 
-
-const SPEED: float = 5.0
+var speed: float
+const WALK_SPEED: float = 5.0
+const SPRINT_SPEED: float = 8.0
 const JUMP_VELOCITY: float = 4.5
-const SENSITIVITY: float = 0.03
+const SENSITIVITY: float = 0.005
 
-@onready var head = $Head
-@onready var camera = $Head/Camera3D
+# Bob variables
+const BOB_FREQUENCY: float = 2.0
+const BOB_AMPLITUDE: float = 0.08
+var t_bob: float = 0.0
+
+# FOV variables
+const BASE_FOV: float = 75.0
+const FOV_CHANGE: float = 1.5
+
+@onready var head: Node3D = $Head
+@onready var camera: Camera3D = $Head/Camera3D
 
 
 func _ready() -> void:
@@ -28,15 +38,42 @@ func _physics_process(delta: float) -> void:
 	# Handle jump.
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = JUMP_VELOCITY
+	
+	# Handle sprint.
+	if Input.is_action_pressed("sprint"):
+		speed = SPRINT_SPEED
+	else:
+		speed = WALK_SPEED
 
 	# Get the input direction and handle the movement/deceleration.
 	var input_dir := Input.get_vector("left", "right", "forward", "backward")
 	var direction = (head.transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
-	if direction:
-		velocity.x = direction.x * SPEED
-		velocity.z = direction.z * SPEED
+	if is_on_floor():
+		if direction:
+			velocity.x = direction.x * speed
+			velocity.z = direction.z * speed
+		else:
+			velocity.x = move_toward(velocity.x, 0, WALK_SPEED)
+			velocity.z = move_toward(velocity.z, 0, WALK_SPEED)
 	else:
-		velocity.x = move_toward(velocity.x, 0, SPEED)
-		velocity.z = move_toward(velocity.z, 0, SPEED)
+		velocity.x = lerp(velocity.x, direction.x * speed, delta * 2.0)
+		velocity.z = lerp(velocity.z, direction.z * speed, delta * 2.0)
+	
+	
+	# Head bob
+	t_bob += delta * velocity.length() * float(is_on_floor())
+	camera.transform.origin = _headbob(t_bob)
+
+	# FOV
+	var velocity_clamped = clamp(velocity.length(), 0.5, SPRINT_SPEED * 2)
+	var target_fov: float = BASE_FOV + FOV_CHANGE * velocity_clamped
+	camera.fov = lerp(camera.fov, target_fov, delta * 8.0)
 
 	move_and_slide()
+
+
+func _headbob(time) -> Vector3:
+	var pos = Vector3.ZERO
+	pos.y = sin(time * BOB_FREQUENCY) * BOB_AMPLITUDE
+	pos.x = sin(time * BOB_FREQUENCY / 2) * BOB_AMPLITUDE
+	return pos
